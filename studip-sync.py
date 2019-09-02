@@ -50,8 +50,6 @@ def sane_maker(title):
 	title = title.replace('--', '-')
 	title = title.replace('+', '-')
 	title = title.replace('_', '-')
-	if re.match(r'.*\..{4,}', title):
-		title = title.replace('.', '', 1)
 	return title
 
 print('making login request')
