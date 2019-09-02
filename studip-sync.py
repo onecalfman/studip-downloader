@@ -18,11 +18,7 @@ sane_folder_names   =   1
 sane_file_names     =   1
 
 custom_names = {
-        'enter course id here':     'custom name here',
-        'enter course id here':     'custom name here',
-        'enter course id here':     'custom name here',
-        'enter course id here':     'custom name here',
-        'enter course id here':     'custom name here',
+        'enter course id here':     'custom name here'
         }
 
 if not username:
