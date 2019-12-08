@@ -1,0 +1,158 @@
+#!/bin/python3
+
+import requests
+from bs4 import BeautifulSoup
+import re
+import os
+import sys
+import urllib
+
+username    =   ''
+password    =   ''
+folder      =   ''
+
+login_url           =   'https://studip.tu-braunschweig.de/index.php?again=yes'
+courses_url         =   'https://studip.tu-braunschweig.de/dispatch.php/my_courses'
+file_list_url       =   'https://studip.tu-braunschweig.de/dispatch.php/course/files/flat?cid='
+course_details      =   'https://studip.tu-braunschweig.de/dispatch.php/course/details/?cid='
+
+sane_folder_names   =   1
+sane_file_names     =   1
+append_semester     =   0
+only_this_semester  =   0
+cut_the_crap        =   1
+force_update        =   0
+
+this_semester       =   ' WiSe 2019'
+
+custom_names = {
+        'b8aaf4d4b7586639d492b360c7438790':     'recht',
+        '5319a9e2f9bd0e6febfce046d7f8d87a':     'thermo',
+        '9288990f549fbc7e7f24ab034ee1cb70':     'thermo',
+        'd469c442675f2dc7fc3ca0b7dc8a6ac4':     'thermo',
+        '2c5ca26caaa735bdbadce39f913ea5a2':     'cad'
+        }
+
+excluded_courses = ['course to exclude','another course to exclude']
+
+option = sys.argv[-1]
+if option == 'force' or option == 'f' or option == 'update':
+    force_update = 1
+
+if not username:
+    username = input('username: ')
+if not password:
+    password = input('password: ')
+if not folder:
+    folder = input('download location: ')
+login_data = {
+        'loginname':            username,
+        'password':             password,
+        'security_token':       '',
+        'login_ticket':         '',
+        'login':                ''
+}
+
+if not folder[-1] == '/':
+    folder = folder + '/'
+if not os.path.exists(folder):
+    os.mkdir(folder)
+
+def uncrap(title):
+    title = title.replace('Grundlagen des ', '')
+    title = title.replace('Einführung in die ', '')
+    title = title.replace('Einführung in den ', '')
+    title = title.replace('Einführung in das ', '')
+    title = title.replace('Betriebliches ', '')
+    title = title.replace('für 3. Sem. Maschinenbau,Wirtschaftsingenieure MB und Bioingenieure ', '')
+    title = title.replace('grundlagen-des-','')
+    title = title.replace('grundlagen-des-','')
+    title = title.replace('einführung-in-die-','')
+    title = title.replace('einführung-in-den-','')
+    title = title.replace('einführung-in-das-','')
+    title = title.replace('betriebliches-','')
+    title = title.replace('für-3.-sem.-maschinenbau,wirtschaftsingenieure-mb-und-bioingenieure ', '')
+    return title
+
+def sane_maker(title):
+	title = title.lower()
+	title = title.replace('ä', 'ae')
+	title = title.replace('ö', 'oe')
+	title = title.replace('ü', 'ue')
+	title = title.replace('ß', 'ss')
+	title = title.replace(' ', '-')
+	title = title.replace('--', '-')
+	title = title.replace('+', '-')
+	title = title.replace('_', '-')
+	return title
+
+print('making login request')
+s = requests.Session()
+res = s.get(login_url)
+cookies = dict(res.cookies)
+soup = BeautifulSoup(res.content, 'html5lib')
+login_data['security_token'] = soup.find('input', attrs={'name': 'security_token'})['value']
+login_data['login_ticket'] = soup.find('input', attrs={'name': 'login_ticket'})['value']
+res = s.post(login_url, data=login_data, cookies=cookies)
+
+print('guess it succeeded idk tho')
+
+d = s.get(courses_url)
+courses_soup = BeautifulSoup(d.text, 'html.parser')
+courses = []
+for link in courses_soup.find_all('a'):
+    link = (link.get('href'))
+    match = re.match(r'(^https:\/\/studip\..*\.de\/seminar_main\.php\?auswahl=\w{32}$)', link)
+    if match:
+        id = []
+        id = link.rsplit("=")
+        id = str(id[-1])
+        courses.append(id)
+
+print('entering the mainframe')
+for id in courses:
+    if id in excluded_courses:
+        continue
+    f = s.get(file_list_url + id)
+    soup = BeautifulSoup(f.text, 'html.parser')
+    if append_semester or only_this_semester:
+        t = s.get(course_details + id)
+        semester = ' ' + re.findall(r'([A-Z][a-z][A-Z][a-z]\s[0-9]{4})', t.text)[0]
+        if not semester == this_semester and only_this_semester:
+            continue
+    if not append_semester:
+        semester = ''
+
+    if id in custom_names:
+        subfolder = custom_names[id] + '/'
+    else:
+	    subfolder = soup.title.string
+	    subfolder = subfolder.split(':')
+	    subfolder = str(subfolder[-1])
+	    subfolder = subfolder.split('-')
+	    subfolder = subfolder[0].strip() + semester + '/'
+    print('\n',  subfolder[:-1] ,'\n')
+    if cut_the_crap:
+        subfolder = uncrap(subfolder)
+    if sane_folder_names:
+        subfolder = sane_maker(subfolder)
+    if not os.path.exists(folder + subfolder):
+        os.mkdir(folder + subfolder)
+
+    for link in soup.find_all('a'):
+        link = (link.get('href'))
+        match = re.match(r'(.*file_id=.*)',link)
+        if match:
+            filename = link.rsplit("=")
+            filename = str(filename[-1])
+            filename = urllib.parse.unquote(filename)
+            if cut_the_crap:
+                filename = uncrap(filename)
+            if sane_file_names: 
+                filename = sane_maker(filename)
+            fullpath = folder + subfolder + filename
+            if force_update or not os.path.exists(folder + subfolder + filename):
+                print('     ' + subfolder + filename)
+                file = s.get(link)
+                with open(fullpath , 'wb') as f:
+                    f.write(file.content)
